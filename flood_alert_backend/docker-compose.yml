@@ -1,0 +1,26 @@
+
+services:
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=nabil
+      - POSTGRES_PASSWORD=secret
+      - POSTGRES_DB=flood_db
+    ports:
+      - "5432:5432"
+  web:
+    build: .
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app:z
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - DATABASE_URL=postgresql://nabil:secret@db:5432/flood_db
+volumes:
+  postgres_data:
