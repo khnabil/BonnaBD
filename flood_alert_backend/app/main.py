@@ -1,15 +1,54 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException,status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel,EmailStr
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 import requests
 from . import models, database
+from fastapi.middleware.cors import CORSMiddleware
 
-# Create tables automatically
+
+SECRET_KEY = "supersecretkey"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI()
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "*"  # In development, allowing '*' makes life easier!
+]
 
-# THE CORRECT URL YOU FOUND
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 DATA_URL = "https://api3.ffwc.gov.bd/data_load/recent-observed/"
 STATION_NAMES_URL = "https://api3.ffwc.gov.bd/data_load/stations/"
 
@@ -20,22 +59,20 @@ def home():
 @app.post("/sync-water-levels")
 def sync_data_from_govt(db: Session = Depends(database.get_db)):
     try:
-        # 1. Fetch the Water Data
+
         print("Fetching Water Levels...")
         response = requests.get(DATA_URL, timeout=15)
         water_data = response.json()
         
-        # 2. Fetch Station Names (Optional, but makes it look nicer)
+        # Fetch Station Names (Optional, but makes it look nicer)
         # We try to get real names. If it fails, we use "Station ID"
         station_map = {}
         try:
             print("Fetching Station Names...")
             meta_response = requests.get(STATION_NAMES_URL, timeout=5)
             meta_data = meta_response.json()
-            # Map ID to Name (Assuming structure, usually list of dicts)
             if isinstance(meta_data, list):
                 for s in meta_data:
-                    # Adjust keys based on actual metadata format if needed
                     s_id = str(s.get("id", ""))
                     s_name = s.get("name", s.get("station", "Unknown"))
                     station_map[s_id] = s_name
@@ -43,18 +80,11 @@ def sync_data_from_govt(db: Session = Depends(database.get_db)):
             print("Could not fetch station names, using IDs instead.")
 
         count = 0
-        
-        # 3. PARSE THE DICTIONARY (The logic for your specific JSON)
-        # Structure: {"1": [{"date": "level"}, ...], "2": ...}
+
         for station_id, readings_list in water_data.items():
             if not readings_list or not isinstance(readings_list, list):
                 continue
-            
-            # Get the LATEST reading (usually the last item in the list)
             latest_reading = readings_list[-1] 
-            
-            # The reading is like {"2025-10-25 09": "0.85"}
-            # We need to extract the value "0.85" regardless of the date key
             level_str = list(latest_reading.values())[0]
             
             try:
@@ -62,22 +92,17 @@ def sync_data_from_govt(db: Session = Depends(database.get_db)):
             except:
                 water_level = 0.0
 
-            # Determine Name
             name = station_map.get(station_id, f"Station {station_id}")
-
-            # 4. Save to Database
-            # Check if exists first to update, or create new
             existing = db.query(models.WaterStation).filter(models.WaterStation.station_name == name).first()
             
             if existing:
                 existing.water_level = water_level
-                # existing.last_updated = func.now() (Auto updates)
             else:
                 new_station = models.WaterStation(
                     station_name=name,
-                    river_name=f"River ID {station_id}", # Placeholder until we parse river names
+                    river_name=f"River ID {station_id}", 
                     water_level=water_level,
-                    danger_level=0.0 # Govt API didn't give danger level here
+                    danger_level=0.0 
                 )
                 db.add(new_station)
             
@@ -145,3 +170,67 @@ def update_task_status(task_id: int, new_status: str, db: Session = Depends(data
     db.commit()
     
     return {"status": "updated", "current_state": new_status}
+
+
+# --- AUTHENTICATION FEATURE ---
+
+class UserSignup(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    confirm_password: str
+    is_volunteer: bool
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: int
+    is_volunteer: bool
+
+@app.post("/auth/signup", response_model=Token)
+def signup(user: UserSignup, db: Session = Depends(database.get_db)):
+    if user.password != user.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+    
+    existing_user = db.query(models.User).filter(models.User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    hashed_pw = get_password_hash(user.password)
+    new_user = models.User(
+        full_name=user.full_name,
+        email=user.email,
+        hashed_password=hashed_pw,
+        is_volunteer=user.is_volunteer
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    access_token = create_access_token(data={"sub": new_user.email})
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "user_id": new_user.id,
+        "is_volunteer": new_user.is_volunteer
+    }
+
+@app.post("/auth/login", response_model=Token)
+def login(user_credentials: UserLogin, db: Session = Depends(database.get_db)):
+    user = db.query(models.User).filter(models.User.email == user_credentials.email).first()
+    if not user or not verify_password(user_credentials.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+        )
+    access_token = create_access_token(data={"sub": user.email})
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "user_id": user.id,
+        "is_volunteer": user.is_volunteer
+    }

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime
+from sqlalchemy import Column, Integer, String, Float, DateTime,Boolean
 from sqlalchemy.sql import func
 from .database import Base
 
@@ -27,3 +27,13 @@ class VolunteerTask(Base):
     longitude = Column(Float)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    __tablename__="user"
+    id = Column(Integer,primary_key=True,index=True)
+    full_name = Column(String)
+    email = Column(String,unique=True,index=True)
+    hashed_password = Column(String)
+    is_volunteer = Column(Boolean ,default=False)
+    created_at = Column(DateTime(timezone=True),server_default=func.now())
