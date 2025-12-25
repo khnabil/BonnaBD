@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../constants.dart';
 import 'login_screen.dart';
+import 'ngo_register_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -212,7 +213,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
 
               const SizedBox(height: 30),
-              
+              Center(
+                child: TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const NgoRegisterScreen()),
+                    );
+                  },
+                  child: const Text(
+                    "Register as an NGO/Organization",
+                    style: TextStyle(
+                      color: kPrimaryCyan, 
+                      decoration: TextDecoration.underline,
+                      fontWeight: FontWeight.bold
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
               // Login Link
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

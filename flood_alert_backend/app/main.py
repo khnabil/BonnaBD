@@ -6,9 +6,10 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import requests
-from . import models, database
+from . import models, database,schemas
 from fastapi.middleware.cors import CORSMiddleware
-
+from typing import List
+from .auth import get_current_user
 
 SECRET_KEY = "supersecretkey"
 ALGORITHM = "HS256"
@@ -39,6 +40,19 @@ origins = [
     "http://localhost:3000",
     "*"  # In development, allowing '*' makes life easier!
 ]
+
+
+class NGOSignup(BaseModel):
+    # Login Info
+    full_name: str
+    email: str
+    password: str
+    # Public Profile Info
+    organization_name: str
+    description: str
+    contact_phone: str
+    aid_types: str # "Food, Medicine"
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -234,3 +248,112 @@ def login(user_credentials: UserLogin, db: Session = Depends(database.get_db)):
         "user_id": user.id,
         "is_volunteer": user.is_volunteer
     }
+
+
+@app.post("/auth/signup-ngo")
+def register_ngo(ngo_data: NGOSignup, db: Session = Depends(database.get_db)):
+    # 1. Check if email exists
+    existing_user = db.query(models.User).filter(models.User.email == ngo_data.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # 2. Create the User Login
+    hashed_pw = pwd_context.hash(ngo_data.password)
+    new_user = models.User(
+        full_name=ngo_data.full_name,
+        email=ngo_data.email,
+        hashed_password=hashed_pw,
+        role="ngo",          # <--- IMPORTANT: Mark them as NGO
+        is_volunteer=False
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    # 3. Create the Public NGO Profile linked to that User
+    new_ngo_profile = models.NGO(
+        user_id=new_user.id,  # <--- Link to the new user
+        name=ngo_data.organization_name,
+        description=ngo_data.description,
+        contact_phone=ngo_data.contact_phone,
+        aid_types=ngo_data.aid_types,
+        is_verified=False     # Default to False until Admin approves
+    )
+    db.add(new_ngo_profile)
+    db.commit()
+
+    return {"message": "NGO Registration Successful! Please wait for verification."}
+
+
+# --- ADMIN ONLY: VERIFY AN NGO ---
+
+@app.put("/admin/verify-ngo/{ngo_id}")
+def verify_ngo(ngo_id: int, db: Session = Depends(database.get_db)):
+    # 1. Find the NGO
+    ngo = db.query(models.NGO).filter(models.NGO.id == ngo_id).first()
+    if not ngo:
+        raise HTTPException(status_code=404, detail="NGO not found")
+    
+    # 2. Approve them
+    ngo.is_verified = True
+    db.commit()
+    
+    return {"message": f"Success! {ngo.name} is now a verified NGO."}
+
+
+# 1. Create a Campaign (Only NGOs can do this)
+@app.post("/campaigns/", response_model=schemas.CampaignResponse)
+def create_campaign(
+    campaign: schemas.CampaignCreate, 
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # Security Check: Is the user an NGO?
+    if current_user.role != "ngo":
+        raise HTTPException(status_code=403, detail="Only verified NGOs can create campaigns.")
+    
+    # Verify the NGO profile exists
+    if not current_user.ngo_profile:
+        raise HTTPException(status_code=400, detail="NGO profile incomplete.")
+
+    new_campaign = models.Campaign(
+        title=campaign.title,
+        description=campaign.description,
+        target_amount=campaign.target_amount,
+        ngo_id=current_user.ngo_profile.id
+    )
+    db.add(new_campaign)
+    db.commit()
+    db.refresh(new_campaign)
+    return new_campaign
+
+# 2. List All Campaigns (Public - For the App)
+@app.get("/campaigns/", response_model=List[schemas.CampaignResponse])
+def get_campaigns(skip: int = 0, limit: int = 20, db: Session = Depends(database.get_db)):
+    return db.query(models.Campaign).offset(skip).limit(limit).all()
+
+
+# 3. Submit a Flood Report (Any logged-in user)
+@app.post("/reports/", response_model=schemas.ReportResponse)
+def create_report(
+    report: schemas.ReportCreate,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    new_report = models.FloodReport(
+        description=report.description,
+        location=report.location,
+        latitude=report.latitude,
+        longitude=report.longitude,
+        severity=report.severity,
+        user_id=current_user.id
+    )
+    db.add(new_report)
+    db.commit()
+    db.refresh(new_report)
+    return new_report
+
+# 4. Get All Reports (For the Map Screen)
+@app.get("/reports/", response_model=List[schemas.ReportResponse])
+def get_reports(db: Session = Depends(database.get_db)):
+    return db.query(models.FloodReport).all()
