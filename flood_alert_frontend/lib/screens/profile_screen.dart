@@ -1,31 +1,80 @@
 import 'package:flutter/material.dart';
 import '../constants.dart';
-import 'welcome_screen.dart'; // Ensure you have this import for logout
+import '../services/api_service.dart';
+import 'welcome_screen.dart';
+import 'create_campaign_screen.dart';
+import 'admin_dashboard_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class ProfileScreen extends StatelessWidget {
-  // In a real app, you would fetch these details from your backend
-  final String userName;
-  final String userEmail;
-  final String userRole; // "User", "Volunteer", or "NGO"
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({super.key});
 
-  const ProfileScreen({
-    super.key,
-    this.userName = "Nabil Ahmed", // Default placeholders
-    this.userEmail = "nabil@example.com",
-    this.userRole = "Volunteer", 
-  });
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
 
-  void _handleLogout(BuildContext context) {
-    // 1. Clear any stored tokens (e.g., SharedPreferences) here
-    // 2. Navigate back to Welcome Screen
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const WelcomeScreen()),
-      (route) => false,
-    );
+class _ProfileScreenState extends State<ProfileScreen> {
+  // Variables to hold dynamic data
+  bool _isLoading = true;
+  String _fullName = "Loading...";
+  String _email = "";
+  String _role = "user"; // Default to basic user
+  String _firstLetter = "?"; // For the avatar
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileData();
+  }
+
+  // --- FETCH DATA FROM BACKEND ---
+  void _loadProfileData() async {
+    try {
+      final data = await ApiService.fetchUserProfile();
+      
+      setState(() {
+        _fullName = data['full_name'] ?? "Unknown User";
+        _email = data['email'] ?? "No Email";
+        _role = data['role'] ?? "user";
+        
+        // Get first letter for Avatar
+        if (_fullName.isNotEmpty) {
+          _firstLetter = _fullName[0].toUpperCase();
+        }
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _fullName = "Error loading profile";
+        _isLoading = false;
+      });
+      // Optional: Redirect to login if token expired
+      print("Profile Error: $e");
+    }
+  }
+
+  void _handleLogout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Delete token
+    
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // If loading, show spinner
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: kBackgroundColor,
+        body: Center(child: CircularProgressIndicator(color: kPrimaryCyan)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: kBackgroundColor,
       appBar: AppBar(
@@ -44,20 +93,20 @@ class ProfileScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // 1. THE PROFILE HEADER
+            // 1. DYNAMIC HEADER
             _buildProfileHeader(),
             
             const SizedBox(height: 30),
 
-            // 2. STATS ROW (Optional, makes it look pro)
+            // 2. STATS ROW (Static for now, can be dynamic later)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildStatItem("05", "Reports"),
+                _buildStatItem("0", "Reports"),
                 _buildContainerLine(),
-                _buildStatItem("12", "Alerts"),
+                _buildStatItem("0", "Alerts"),
                 _buildContainerLine(),
-                _buildStatItem("2", "Donations"),
+                _buildStatItem("0", "Donations"),
               ],
             ),
 
@@ -72,9 +121,35 @@ class ProfileScreen extends StatelessWidget {
             
             _buildMenuTile(Icons.person_outline, "Personal Information", () {}),
             _buildMenuTile(Icons.history, "Donation History", () {}),
-            _buildMenuTile(Icons.notifications_outlined, "Notification Settings", () {}),
             
             const SizedBox(height: 20),
+
+            // --- DYNAMIC ADMIN SECTION ---
+            if (_role == "admin") ...[
+              const Align(
+                alignment: Alignment.centerLeft, 
+                child: Text("Admin Panel", style: TextStyle(color: kPrimaryCyan, fontWeight: FontWeight.bold))
+              ),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.verified_user, "Verify NGOs", () {
+                 Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminDashboardScreen()));
+              }),
+              const SizedBox(height: 20),
+            ],
+
+            // --- DYNAMIC NGO SECTION ---
+            if (_role == "ngo") ...[
+              const Align(
+                alignment: Alignment.centerLeft, 
+                child: Text("Organization Tools", style: TextStyle(color: kPrimaryCyan, fontWeight: FontWeight.bold))
+              ),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.campaign, "Create New Campaign", () {
+                 Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateCampaignScreen()));
+              }),
+              const SizedBox(height: 20),
+            ],
+
             const Align(
               alignment: Alignment.centerLeft,
               child: Text("Support", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
@@ -92,8 +167,8 @@ class ProfileScreen extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: () => _handleLogout(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF3B30).withOpacity(0.1), // Light red bg
-                  foregroundColor: const Color(0xFFFF3B30), // Red text
+                  backgroundColor: const Color(0xFFFF3B30).withOpacity(0.1),
+                  foregroundColor: const Color(0xFFFF3B30),
                   padding: const EdgeInsets.symmetric(vertical: 15),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 0,
@@ -121,11 +196,13 @@ class ProfileScreen extends StatelessWidget {
                 shape: BoxShape.circle,
                 border: Border.all(color: kPrimaryCyan, width: 2),
               ),
-              child: const CircleAvatar(
+              child: CircleAvatar(
                 radius: 50,
                 backgroundColor: kCardColor,
-                child: Icon(Icons.person, size: 50, color: Colors.grey),
-                // backgroundImage: NetworkImage("..."), // Use this for real images
+                child: Text(
+                  _firstLetter, 
+                  style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white)
+                ),
               ),
             ),
             Positioned(
@@ -144,12 +221,12 @@ class ProfileScreen extends StatelessWidget {
         ),
         const SizedBox(height: 15),
         Text(
-          userName,
+          _fullName,
           style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 5),
         Text(
-          userEmail,
+          _email,
           style: const TextStyle(color: Colors.grey, fontSize: 14),
         ),
         const SizedBox(height: 10),
@@ -161,7 +238,7 @@ class ProfileScreen extends StatelessWidget {
             border: Border.all(color: kPrimaryCyan.withOpacity(0.5)),
           ),
           child: Text(
-            userRole.toUpperCase(),
+            _role.toUpperCase(),
             style: const TextStyle(color: kPrimaryCyan, fontSize: 12, fontWeight: FontWeight.bold),
           ),
         ),

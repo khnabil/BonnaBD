@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../constants.dart';
 import '../services/api_service.dart';
 import '../models/campaign.dart';
+import 'verified_ngos_page.dart';
+import 'create_campaign_screen.dart';
 
 class DonateScreen extends StatefulWidget {
   const DonateScreen({super.key});
@@ -22,7 +24,7 @@ class _DonateScreenState extends State<DonateScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackgroundColor, // Keeping your dark theme
+      backgroundColor: kBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -30,38 +32,104 @@ class _DonateScreenState extends State<DonateScreen> {
         title: const Text("Active Relief Funds",
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
       ),
-      body: FutureBuilder<List<Campaign>>(
-        future: futureCampaigns,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: kPrimaryCyan));
-          } else if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text("No active campaigns right now.", style: TextStyle(color: Colors.white)));
-          }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: snapshot.data!.length,
-            itemBuilder: (context, index) {
-              return _buildCampaignCard(snapshot.data![index]);
-            },
-          );
-        },
+      body: Column(
+        children: [
+          _buildActionButtons(context),
+          
+          const Divider(color: Colors.white24, height: 30),
+          Expanded(
+            child: FutureBuilder<List<Campaign>>(
+              future: futureCampaigns,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: kPrimaryCyan));
+                } else if (snapshot.hasError) {
+                  return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
+                } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(child: Text("No active campaigns right now.", style: TextStyle(color: Colors.white)));
+                }
+
+                return ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: snapshot.data!.length,
+                  itemBuilder: (context, index) {
+                    return _buildCampaignCard(snapshot.data![index]);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // CHANGE 2: The new Buttons Widget
+  Widget _buildActionButtons(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+      child: Column(
+        children: [
+          // Button 1: Show Verified NGOs
+          SizedBox(
+            width: double.infinity, // Covers left to right
+            height: 55,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.verified_user, color: Colors.white),
+              label: const Text("Show Verified NGOs", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
+              ),
+              onPressed: () {
+                // Navigate to the Verified NGO Page
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const VerifiedNgoPage()),
+                );
+              },
+            ),
+          ),
+          
+          const SizedBox(height: 12), // Spacing between buttons
+          
+          SizedBox(
+            width: double.infinity, 
+            height: 55,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.add_circle_outline, color: Colors.black),
+              label: const Text("Start a Campaign", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFD700), 
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 4,
+              ),
+              onPressed: () {
+                // NAVIGATE TO CREATE CAMPAIGN PAGE
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CreateCampaignScreen()),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildCampaignCard(Campaign campaign) {
-    // Calculate progress for the bar
     double progress = campaign.percentFunded;
     int percentText = (progress * 100).toInt();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 25),
       decoration: BoxDecoration(
-        color: kCardColor, // Dark card background
+        color: kCardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -74,13 +142,12 @@ class _DonateScreenState extends State<DonateScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. IMAGE SECTION (With "Urgent" Badge)
+          // IMAGE SECTION
           Stack(
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 child: Image.network(
-                  // Using a placeholder flood image since backend doesn't have images yet
                   "https://images.unsplash.com/photo-1547623641-82f92526b095?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80",
                   height: 180,
                   width: double.infinity,
@@ -109,7 +176,6 @@ class _DonateScreenState extends State<DonateScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 2. TITLE & ORGANIZER
                 Text(
                   campaign.title,
                   style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
@@ -120,7 +186,7 @@ class _DonateScreenState extends State<DonateScreen> {
                     const Icon(Icons.verified, color: kPrimaryCyan, size: 16),
                     const SizedBox(width: 5),
                     Text(
-                      "Verified NGO Campaign", // You can fetch real NGO name later
+                      "Verified NGO Campaign", 
                       style: TextStyle(color: Colors.grey[400], fontSize: 13),
                     ),
                   ],
@@ -128,7 +194,6 @@ class _DonateScreenState extends State<DonateScreen> {
 
                 const SizedBox(height: 20),
 
-                // 3. FINANCIAL STATS
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -145,20 +210,18 @@ class _DonateScreenState extends State<DonateScreen> {
 
                 const SizedBox(height: 10),
 
-                // 4. PROGRESS BAR
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
                   child: LinearProgressIndicator(
                     value: progress,
                     minHeight: 8,
                     backgroundColor: Colors.grey[800],
-                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFFD700)), // Gold/Yellow color
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFFD700)),
                   ),
                 ),
 
                 const SizedBox(height: 10),
 
-                // 5. PERCENTAGE & DONORS
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -169,17 +232,16 @@ class _DonateScreenState extends State<DonateScreen> {
 
                 const SizedBox(height: 25),
 
-                // 6. DONATE BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(
                     onPressed: () {
-                      // Add donation logic here
+                      // Donation Logic
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFD700), // The bright yellow from your design
-                      foregroundColor: Colors.black, // Black text on yellow button
+                      backgroundColor: const Color(0xFFFFD700),
+                      foregroundColor: Colors.black,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                       elevation: 0,
                     ),

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart'; // <--- 1. ADD THIS IMPORT
 import 'dart:convert';
 import '../constants.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
+import '../services/api_service.dart'; // Use your ApiService for the base URL
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,8 +25,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _loginUser() async {
     setState(() => _isLoading = true);
 
-    // NOTE: Use '10.0.2.2' for Android Emulator, '127.0.0.1' for Web/Linux
-    const String apiUrl = "http://127.0.0.1:8000/auth/login"; 
+    // Use ApiService.baseUrl to keep it consistent
+    final String apiUrl = "${ApiService.baseUrl}/auth/login"; 
 
     try {
       final response = await http.post(
@@ -41,29 +43,38 @@ class _LoginScreenState extends State<LoginScreen> {
         final data = jsonDecode(response.body);
         String token = data['access_token'];
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Welcome Back! 👋"), backgroundColor: kPrimaryCyan),
-        );
+        // --- 2. CRITICAL FIX: Save Token to Storage ---
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('access_token', token);
+        // ----------------------------------------------
 
-        // 2. Go to Home Screen (and remove Login from back history)
         if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Welcome Back! 👋"), backgroundColor: kPrimaryCyan),
+          );
+
+          // 3. Go to Home Screen
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => HomeScreen(userToken: token)),
           );
         }
-
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Invalid Email or Password"), backgroundColor: Colors.red),
-        );
+        _showError("Invalid Email or Password");
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Connection Error: $e"), backgroundColor: Colors.red),
-      );
+      _showError("Connection Error. Check backend.");
+      print("Login Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showError(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
+      );
     }
   }
 

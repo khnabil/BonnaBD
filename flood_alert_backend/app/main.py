@@ -352,8 +352,30 @@ def create_report(
     db.commit()
     db.refresh(new_report)
     return new_report
-
+# --- ADD THIS TO MAIN.PY ---
+@app.get("/auth/me")
+def read_current_user(current_user: models.User = Depends(get_current_user)):
+    # This automatically uses the token to find the user details
+    return {
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+        "role": current_user.role, 
+        "is_volunteer": current_user.is_volunteer
+    }
 # 4. Get All Reports (For the Map Screen)
 @app.get("/reports/", response_model=List[schemas.ReportResponse])
 def get_reports(db: Session = Depends(database.get_db)):
     return db.query(models.FloodReport).all()
+
+# --- ADD THIS TO MAIN.PY ---
+
+@app.get("/admin/unverified-ngos")
+def get_unverified_ngos(db: Session = Depends(database.get_db)):
+    # Fetch all NGOs where is_verified is False
+    return db.query(models.NGO).filter(models.NGO.is_verified == False).all()
+
+# --- PUBLIC: GET VERIFIED NGOS ---
+@app.get("/ngos/")
+def get_verified_ngos(db: Session = Depends(database.get_db)):
+    return db.query(models.NGO).filter(models.NGO.is_verified == True).all()
